@@ -4,8 +4,8 @@ Open [Agent Skills](https://agentskills.io) from Fixed Width — reusable agent 
 any one agent. Install with the [`skills` CLI](https://github.com/vercel-labs/skills):
 
 ```bash
-npx skills add fixed-width/agent-skills                 # all skills in this repo
-npx skills add fixed-width/agent-skills -s glass-drive  # just one
+npx skills add fixed-width/skills                  # all skills in this repo
+npx skills add fixed-width/skills -s glass-drive   # just one
 ```
 
 Works across the agents the CLI supports (Claude Code, Codex, Cursor, OpenCode, and more).
