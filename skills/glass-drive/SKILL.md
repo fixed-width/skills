@@ -61,6 +61,13 @@ when a number or log can't tell you *why* something looks wrong.
   errors or is partial (a custom canvas, or some secondary windows), address those parts by
   mouse + pixel coords + logs. Don't build a plan on semantic addressing before you've
   confirmed it works for the part you need.
+- **Address interactive elements by `name`, not `role`.** Some toolkits (Jetpack Compose)
+  split an element's accessible *name*, its actable *role*, and its clickability across
+  separate parent/child/sibling nodes — so a `glass_wait_for_element {name, role:"Button"}`
+  filter misses a button that `{name}` alone finds (the name sits on one node, the Button
+  role and `focusable` state on its parent/sibling). Filter by `name` (plus a state like
+  `enabled`), not `role`, unless a snapshot confirms the toolkit merges name + role onto one
+  node.
 - **Mouse clicks are the most reliable input; build verification around mouse-driven widgets.**
   Keyboard, pointer-modifiers, and drags can land or not depending on the app — always confirm
   by signal (see Caveats).
