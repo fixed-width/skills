@@ -1,6 +1,6 @@
 ---
 name: glass-drive
-description: Use when driving a native GUI app through the glass MCP tools (glass_start, glass_screenshot, glass_diff, glass_click, glass_drag, glass_a11y_snapshot, glass_wait_*, glass_logs) to build, observe, interact with, or debug it — especially a canvas / game / custom-rendered / no-accessibility app you must verify by pixels, mouse, and stdout logs instead of the accessibility tree.
+description: Use when driving a native GUI app through the glass MCP tools (glass_start, glass_screenshot, glass_diff, glass_click, glass_drag, glass_gesture, glass_a11y_snapshot, glass_wait_*, glass_logs) to build, observe, interact with, or debug it — on x11, wayland, or the Android (touch) backend — especially a canvas / game / custom-rendered / no-accessibility app you must verify by pixels, mouse, and stdout logs instead of the accessibility tree.
 ---
 
 # Driving glass
@@ -15,9 +15,12 @@ app-side signal** (a stdout log line, or a `glass_diff` change). A returned `ok`
 ## When to use
 
 - Any task using `glass_start`/`glass_screenshot`/`glass_diff`/`glass_click`/… against an
-  x11 or wayland session.
+  x11, wayland, or **android** session.
 - Especially **canvas / game / custom-rendered / no-a11y apps**, where the accessibility tree
   is absent or partial and verification must go through pixels, the mouse, and logs.
+- The **Android (touch) backend** — same text-first loop over `adb`, plus multi-touch via
+  `glass_gesture`; but touch has no hover or modifier plane (see Caveats), so don't port
+  desktop pointer idioms blindly.
 
 ## The loop
 
@@ -41,6 +44,8 @@ when a number or log can't tell you *why* something looks wrong.
 | Read color/shape/position | `glass_screenshot {region:{…}}` (tight crop) | full-window screenshot |
 | Address a widget | a11y `#id` if the tree exposes it; **else** `glass_click` at its rendered pixel coords | assume a11y works everywhere |
 | Known input sequence | `glass_do [click,type,settle]` + `then:{screenshot}` | many separate round-trips |
+| Pinch / rotate / 2-finger gesture | `glass_gesture {pointers:[{from,to},…], duration_ms}` (Android, agent ON) — verify by the app's own zoom/transform signal | a "2-pointer drag" (no such thing) |
+| Coordinates for an action | read from `glass_a11y_snapshot` `bounds` or a prior `glass_diff` `bbox` / `glass_drag` (window-relative device px) | eyeballing a scaled screenshot thumbnail |
 | Multi-window | `glass_list_windows` → `glass_select_window {id}` → `glass_window {op:"geometry"}` | guessing which window is active |
 | Clipboard | `glass_clipboard_set`/`get` for the plumbing; for app→clipboard, drive the app's Copy action then `glass_clipboard_get` | assuming a key chord delivered |
 
@@ -71,6 +76,21 @@ when a number or log can't tell you *why* something looks wrong.
 - **Mouse clicks are the most reliable input; build verification around mouse-driven widgets.**
   Keyboard, pointer-modifiers, and drags can land or not depending on the app — always confirm
   by signal (see Caveats).
+- **Multi-touch is `glass_gesture` (Android + agent).** N simultaneous straight `from→to` pointer
+  segments over a shared `duration_ms` — pinch (two pointers toward/apart), rotate (two on an
+  arc), two-finger swipe (two parallel). It delivers intermediate samples like a paced drag (both
+  pointers, last sample included), so confirm by the app's own signal (a `zoom:`/transform log, or
+  a `glass_diff`), and **calibrate the finger spread** — too wide overshoots a clamp (e.g. a
+  max-zoom ceiling) in one gesture. It needs the on-device agent; without it the tool is
+  unavailable, never a degraded single-pointer fallback.
+- **Take action coordinates from a11y `bounds` or a prior diff/drag — not from a scaled
+  screenshot.** A screenshot thumbnail renders at a different scale than window-relative device
+  px, so eyeballed coords miss; the snapshot `bounds` and `glass_diff` `bbox` are already device px.
+- **Re-snapshot after anything that reflows layout.** a11y `#id`s and bounds go stale after a
+  scroll, a window switch, or an on-screen-keyboard/layout shift — clicking a cached id (or stale
+  bounds that have moved off-screen or negative) lands on the wrong target or a dismiss-scrim.
+  Re-`glass_a11y_snapshot`, and confirm the target is enabled **and** at on-screen coords, before
+  the click.
 - **High-contrast colors when a diff must be tight.** A dark stroke on a dark theme barely
   diffs; a saturated color diffs much stronger.
 - **Pace drags with `duration_ms`** (≥ 200) so frame-based UIs sample the path; a too-short
@@ -107,3 +127,7 @@ General and app-agnostic — confirm per app rather than assuming:
   blind, drive by pixels + behavioral (log) checks.
 - **Re-select after a window may have closed.** After an action that can close the active
   window, `glass_list_windows` + `glass_select_window` a live one before the next op.
+- **Touch backends have no hover or modifier plane.** On Android, `glass_move` (hover) and
+  pointer-modifiers on a drag are silent no-ops — they return `ok` with no effect, so a desktop
+  hover/modifier idiom ported to touch fails quietly. Multi-touch is only via `glass_gesture`
+  (agent ON); a single `glass_drag` cannot express it.
