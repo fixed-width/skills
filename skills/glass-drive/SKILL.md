@@ -1,6 +1,6 @@
 ---
 name: glass-drive
-description: Use when driving a native GUI app through the glass MCP tools (glass_start, glass_screenshot, glass_diff, glass_click, glass_drag, glass_gesture, glass_a11y_snapshot, glass_wait_*, glass_logs) to build, observe, interact with, or debug it — on x11, wayland, or the Android (touch) backend — especially a canvas / game / custom-rendered / no-accessibility app you must verify by pixels, mouse, and stdout logs instead of the accessibility tree.
+description: Use when driving a native GUI app through the glass MCP tools (glass_start, glass_screenshot, glass_diff, glass_click, glass_drag, glass_gesture, glass_a11y_snapshot, glass_wait_*, glass_logs) to build, observe, interact with, or debug it — on x11, wayland, or the Android (touch) backend. Covers both an a11y-rich app (forms, tables, menus, dialogs) you drive by the accessibility tree, and a canvas / game / custom-rendered / no-accessibility app you verify by pixels, mouse, and stdout logs.
 ---
 
 # Driving glass
@@ -12,10 +12,19 @@ image only to diagnose.** And **never trust a tool's `ok` — confirm every acti
 app-side signal** (a stdout log line, or a `glass_diff` change). A returned `ok` means
 "glass sent it," not "the app acted on it": synthetic input can still no-op.
 
+Which oracle is primary depends on the app: for an **a11y-rich app** (forms, tables, menus,
+dialogs) the accessibility tree is primary and pixels are the diagnostic fallback; for a
+**canvas / game** it's the reverse. Probe first to learn which — `glass_doctor` for what's
+available, then a `glass_a11y_snapshot`. See **Driving a11y-rich apps** for the form/table/menu
+guidance the pixel-first patterns below don't cover.
+
 ## When to use
 
 - Any task using `glass_start`/`glass_screenshot`/`glass_diff`/`glass_click`/… against an
   x11, wayland, or **android** session.
+- **a11y-rich apps** (GTK/Qt/native business apps — forms, tables, menus, dialogs), where the
+  accessibility tree is the primary oracle and pixels are the diagnostic fallback. See
+  **Driving a11y-rich apps** below.
 - Especially **canvas / game / custom-rendered / no-a11y apps**, where the accessibility tree
   is absent or partial and verification must go through pixels, the mouse, and logs.
 - The **Android (touch) backend** — same text-first loop over `adb`, plus multi-touch via
@@ -96,6 +105,54 @@ when a number or log can't tell you *why* something looks wrong.
 - **Pace drags with `duration_ms`** (≥ 200) so frame-based UIs sample the path; a too-short
   drag can yield too few points to register a stroke.
 
+## Driving a11y-rich apps (forms, tables, menus, dialogs)
+
+When the app exposes a real accessibility tree (GTK/Qt/native — most business apps),
+**a11y is the primary oracle and pixels are the fallback** — the inverse of the canvas case.
+A `glass_a11y_snapshot` resolves most verification (row content, selection, gating state, sort
+order) with zero pixels; reach for a screenshot only where a11y is genuinely blind (a
+transient's own text, a popover-visibility question, a render bug).
+
+- **Learn what's available from `glass_doctor`, never by probing `PATH`.** It reports the
+  backends and tools glass can use — including ones it bundles *off* `PATH` (e.g. its own
+  `sway` next to the glass binary). "`which sway` finds nothing" ≠ "Wayland unsupported";
+  assuming so silently skips a whole backend.
+- **Menus/popovers are separate surfaces; a real modal is not.** On X11 a dropdown / context
+  menu / submenu is its own override-redirect window: `glass_click_element` on an item misfires
+  (the click lands in the active window at the same coords). Workaround: `glass_select_window`
+  the popover, then a plain `glass_click` at a **local** coord `= item bounds − owning-menu-node
+  bounds`. A genuine modal `Window` (`transient_for`+`modal`) instead addresses cleanly with
+  `glass_click_element` after a plain `select_window` — so probe with one `click_element` before
+  reaching for the popover workaround. On **Wayland** a popover may not appear in
+  `glass_list_windows` at all (an `xdg_popup` folded into the toplevel's a11y tree) — there,
+  drive it by keyboard (`glass_key` Return/arrows), which does reach the focused item.
+- **Virtualized lists/tables expose only the realized rows.** A `GtkColumnView` / `LazyColumn`
+  / `VirtualizingStackPanel` publishes just the on-screen rows to a11y (e.g. 17 of 500) — **never
+  infer the total from the node count**; read it from a status label or a log. There is no
+  scroll-to-element primitive: to reach an off-screen row, loop `glass_scroll` +
+  re-`glass_a11y_snapshot` until its name appears, calibrating rows-per-notch once for the toolkit.
+- **After a re-sort, scroll to a known edge before reading order.** A column-header sort keeps a
+  scroll-anchor row at its viewport position rather than resetting to the top, so the first
+  *realized* rows are the anchor's neighborhood, not the front of the sorted list — a working sort
+  can look broken. `glass_scroll` to the top (or bottom) first, then read the order.
+- **`glass_set_value` writes text and numeric values only — confirm the readback.** It sets an
+  entry or a numeric widget (spin button / slider), but **can't** set a dropdown or a
+  switch/checkbox — choose those by `glass_click`ing the option/toggle instead. And a write can
+  silently no-op (return `ok` without the value committing), so re-read the element's value and
+  confirm it changed rather than trusting `ok`.
+- **A one-shot transient can be too fast to observe — budget round-trips, not duration.** If an
+  element appears once and auto-dismisses (a delete toast), and triggering it forces a
+  window-switch first, the trigger→first-observe path can be longer than the element lives —
+  set up a scoped `glass_wait_for_region` *before* triggering, and if it still misses, report the
+  element as unobservable via glass rather than assuming nothing happened. (A *continuously*
+  repeating affordance — a blinking dot — has no deadline and is always catchable on some cycle;
+  the floor only bites one-shots.)
+- **Region-scoped diff against a baseline is `glass_wait_for_region {region, baseline}`, not
+  `glass_diff`.** `glass_diff` compares the whole frame and returns one union `bbox`; when several
+  areas change at once, that bbox is their union. To ask "did *just* this region change,"
+  `glass_wait_for_region` takes both `region` and `baseline` and returns the same
+  `{matched, changed_pct, bbox}` shape scoped to that rectangle.
+
 ## Common mistakes
 
 - **Trusting a returned `ok`.** Confirm by log or diff.
@@ -108,6 +165,10 @@ when a number or log can't tell you *why* something looks wrong.
 - **Reading `glass_wait_stable {settled:true}` as "the app is idle."** A tiny continuous
   animation repaints every frame yet can read as settled (its per-frame change is below the
   whole-window threshold). Scope with `stability_region`.
+- **Concluding a backend is unavailable because its tool isn't on `PATH`.** Ask `glass_doctor` —
+  glass bundles its own tools (e.g. `sway`) off `PATH`, next to the glass binary.
+- **Inferring a list's total row count from the a11y node count.** A virtualized list exposes
+  only its realized (on-screen) rows; read the true total from a status label or a log.
 
 ## Caveats to verify around
 
