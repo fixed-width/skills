@@ -1,0 +1,27 @@
+name: validate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# No `paths:` filter on purpose: a filtered job is reported as "expected" and never
+# runs on PRs that don't touch its paths, which blocks a merge if it is ever made a
+# required check. The job is a few seconds long, so run it every time.
+
+jobs:
+  frontmatter:
+    name: skill frontmatter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyYAML
+        run: pip install --disable-pip-version-check pyyaml
+
+      - name: Validate every skills/*/SKILL.md
+        run: python3 scripts/validate-skills.py
