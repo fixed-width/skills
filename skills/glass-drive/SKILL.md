@@ -144,8 +144,11 @@ transient's own text, a popover-visibility question, a render bug.
   but **not** a text field's text or a spin button's number. To read a value back, ask
   `glass_wait_for_element {name:"Field", value_contains:"glass"}` or
   `{name:"Active", condition:"checked"}`, which return the matched element and double as the
-  confirm-by-signal step. Note that a combo box's *name* is its current selection, so a dropdown is
-  the one case where the snapshot does show you the value.
+  confirm-by-signal step. Besides `checked`/`unchecked`, `condition` takes `appears`/`disappears`,
+  `enabled`/`disabled`, `selected`/`unselected`, `expanded`/`collapsed`, `focused`, and
+  `visible`/`hidden` — so most gating/selection/disclosure states are a single wait, not a snapshot
+  scan. Note that a combo box's *name* is its current selection, so a dropdown is the one case where
+  the snapshot does show you the value.
 - **`glass_click_element` handles popovers for you.** A dropdown or context menu is often its own
   window whose origin the element's bounds don't reflect; glass detects that and routes the click
   into it. If it can't map the popover to a window it says so —
@@ -153,10 +156,12 @@ transient's own text, a popover-visibility question, a render bug.
   coordinate` — and only then do you `glass_select_window` the popover and `glass_click` at a
   local coord (`item bounds − owning-menu-node bounds`). Don't reach for that workaround first.
 - **`glass_set_value` covers more than text.** It sets a text field, a number for a spin button or
-  slider, a boolean for a switch/checkbox/toggle (`"true"`/`"on"`/`"1"`, idempotent), and a
-  dropdown by option label (it opens the popup and picks the option). Two errors are worth knowing:
-  `AxValueNotApplied` means the toolkit's a11y projection is read-only, so drive that widget with
-  keystrokes instead; `AxElementChanged` means re-snapshot.
+  slider, a boolean for a switch/checkbox/toggle (any of `true/false`, `on/off`, `1/0`, `yes/no` —
+  idempotent), and a dropdown by option label (it opens the popup and picks the option). Each error
+  it can return names its own remedy: `AxElementNotEditable` (the a11y projection exposes no writable
+  value — focus with `glass_click`, then `glass_type`/`glass_key`), `AxValueNotApplied` (the write
+  reported success but the value didn't change — a read-only projection; use keystrokes),
+  `AxValueNotBoolean` (a non-boolean sent to a switch/checkbox), and `AxElementChanged` (re-snapshot).
 - **Virtualized lists expose only the realized rows.** A `GtkColumnView` / `LazyColumn` /
   `VirtualizingStackPanel` publishes just the on-screen rows (e.g. 17 of 500) — **never infer the
   total from the node count**; read it from a status label or a log. To reach an off-screen row,
@@ -201,6 +206,10 @@ The loop and the patterns are the same everywhere; these are the places a backen
   degrading to a single pointer, and a `glass_drag` cannot express it. Confirm by the app's own
   signal (a `zoom:` log, a diff), and **calibrate the finger spread** — too wide overshoots a clamp
   (a max-zoom ceiling) in one gesture.
+- **An iOS switch toggles on a swipe, not a tap.** A `UISwitch` does not actuate on a center tap
+  (the underlying tooling's own tap no-ops too) — it flips on a short swipe across the control. Use
+  `glass_set_value` for iOS toggles: it reads the current state and does the trailing-edge swipe for
+  you (idempotent), where a pixel `glass_click` on the switch would silently do nothing.
 
 ## Common mistakes
 
