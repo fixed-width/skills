@@ -15,6 +15,7 @@ Works across the agents the CLI supports (Claude Code, Codex, Cursor, OpenCode, 
 | Skill | For |
 |---|---|
 | `glass-drive` | Driving the **glass** GUI-automation MCP server — the build → see → interact → debug loop over a native app, verifying by pixels / diff / logs / a11y instead of guessing. Requires the glass MCP server: <https://github.com/fixed-width/glass> |
+| `terse-comments` | Cutting code comments that argue instead of inform — multi-sentence justifications, restatement, comments longer than the code they guard — while keeping the ones that name a real hazard. |
 
 ## License
 
