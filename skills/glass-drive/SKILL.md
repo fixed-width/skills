@@ -146,9 +146,7 @@ question, a render bug.
   page is empty.** The snapshot says which in its own notice: on a not-yet-published tree, take a
   fresh `glass_a11y_snapshot` after a moment before falling back to pixels; a notice describing a
   placeholder for content the app hasn't exposed means the engine won't publish under this launch —
-  drive that area by pixels instead. On **iOS** there is nothing to disclose: a `WKWebView`'s page
-  contributed no element at all through `idb` — no `Document`, and so no notice — so a web screen
-  there reads as an ordinary short tree and only `glass_screenshot` shows it (read 2026-08-24).
+  drive that area by pixels instead.
 - **`glass_click_element` handles popovers for you.** A dropdown or context menu is often its own
   window whose origin the element's bounds don't reflect; glass detects that and routes the click in.
   If it can't map the popover (`element #N is inside a popover glass could not map to a window;
