@@ -139,6 +139,14 @@ question, a render bug.
   the confirm-by-signal step. `condition` also takes `appears`/`disappears`, `enabled`/`disabled`,
   `unchecked`, `selected`/`unselected`, `expanded`/`collapsed`, `focused`, `visible`/`hidden`. (A
   combo box's *name* is its current selection — the one case a snapshot shows a value.)
+- **Web content inside the app you're driving arrives under a `Document` element.** A browser page or
+  an embedded web view publishes its own elements as that `Document`'s children — address them like
+  any other element in the tree; an `<iframe>` is a nested `Document` wherever the platform exposes it.
+- **A `Document` with no children can mean the web engine hasn't published its tree yet, or that the
+  page is empty.** The snapshot says which in its own notice: on a not-yet-published tree, take a
+  fresh `glass_a11y_snapshot` after a moment before falling back to pixels; a notice describing a
+  placeholder for content the app hasn't exposed means the engine won't publish under this launch —
+  drive that area by pixels instead.
 - **`glass_click_element` handles popovers for you.** A dropdown or context menu is often its own
   window whose origin the element's bounds don't reflect; glass detects that and routes the click in.
   If it can't map the popover (`element #N is inside a popover glass could not map to a window;
