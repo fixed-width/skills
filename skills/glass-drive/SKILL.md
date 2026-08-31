@@ -7,7 +7,7 @@ description: Use when driving, automating, or debugging a running native GUI app
 
 ## Overview
 
-glass drives a GUI app as an external black box. Two habits carry most of the value:
+glass drives a GUI app as an external black box. Three habits carry most of the value:
 
 **Verify with cheap text first; spend an image only to diagnose.** `glass_diff`, the
 `glass_wait_for_*` family, and `glass_wait_stable {include_image:false}` return text, so routine
@@ -17,6 +17,11 @@ can't tell you *why* something looks wrong — not to check *whether* something 
 **Never trust a returned `ok` — confirm by an app-side signal.** An `ok` means "glass sent it," not
 "the app acted on it": synthetic input can no-op while the call still succeeds. Gate each action on a
 stdout log line, a `glass_diff` delta, or an a11y state change.
+
+**Batch work you can already predict.** After a fresh accessibility snapshot, if at least two upcoming
+actions or verification waits are known, put them in one `glass_do` call. Include
+`wait_for_element` steps in the sequence instead of issuing each mutation and confirmation
+separately. Use standalone tools only when the next step depends on state you have not observed yet.
 
 Which oracle is primary depends on the app: for an **a11y-rich app** (forms, tables, menus, dialogs)
 the accessibility tree leads and pixels are the fallback; for a **canvas / game** it's the reverse.
@@ -52,10 +57,35 @@ clipboard keep working; a11y and input tools return `Unsupported`).
 ```
 glass_start {a11y:true on Linux if you may want the tree}
    →  glass_a11y_snapshot  (probe: does this app expose a tree at all?)
-   →  act  (glass_click_element / glass_click / glass_type / glass_do)
-   →  confirm by text  (glass_wait_for_log | glass_diff | glass_wait_for_element)
+   →  2+ actions/waits already known?  glass_do(actions + confirmations)
+      otherwise act once, observe, and decide the next step
    →  image ONLY to diagnose why something looks wrong
 ```
+
+## Batch known static work
+
+Prefer `glass_do` whenever the current state already tells you at least two next actions or waits. A
+typical semantic form flow is:
+
+1. Take one fresh `glass_a11y_snapshot` and retain every required `#id`.
+2. Send one `glass_do` containing the known mutations and `wait_for_element` confirmations.
+3. Inspect its completed, failed, and unexecuted outcomes before any recovery. Never blindly replay a
+   completed step or a failed step whose side effects may have occurred.
+
+```json
+{
+  "actions": [
+    {"action":"set_value", "id":12, "text":"Alice"},
+    {"action":"wait_for_element", "description":"Name", "value":"Alice"},
+    {"action":"click_element", "id":16},
+    {"action":"wait_for_element", "name":"Applied"}
+  ]
+}
+```
+
+The batching boundary is observation, not tool type. Keep using one batch while every later argument
+is already known. Stop and make a standalone call when its result determines what comes next, or when
+a reflow, scroll, window change, or fresh snapshot is needed before later element ids can be trusted.
 
 ## Quick reference
 
@@ -73,7 +103,7 @@ glass_start {a11y:true on Linux if you may want the tree}
 | Reach an off-screen row | `glass_scroll_to_element {name, x, y}` — aim `x,y` at the scrollable container | hand-rolling a scroll + re-snapshot loop |
 | Re-read the tree after acting | `glass_click_element {id, return:"snapshot"}` | a separate `glass_a11y_snapshot` round-trip |
 | Observe a *second* window | `window_id` on `glass_screenshot` / `glass_wait_stable` / `glass_wait_for_region` | `glass_select_window` (it retargets every later op) |
-| Known input sequence | `glass_do [click,type,settle]` + `then:{screenshot}` | many separate round-trips |
+| Known sequence of 2+ actions/waits | one `glass_do` with semantic or pixel actions plus in-batch confirmations | separate mutation and wait calls |
 | Extract an app's text | `glass_do` `ctrl+a` then `ctrl+c`, then `glass_clipboard_get` | OCR a screenshot |
 | Pinch / rotate / 2-finger gesture | `glass_gesture {pointers:[{from,to},…], duration_ms}` (Android + agent) | a "2-pointer drag" (no such thing) |
 | Coordinates for an action | a11y `bounds`, or a prior `glass_diff` `bbox` (both window-relative device px) | eyeballing a scaled screenshot thumbnail |
@@ -102,11 +132,12 @@ glass_start {a11y:true on Linux if you may want the tree}
   searching tools hardest — `glass_scroll_to_element {name:"Row 060", role:"ListItem"}` sweeps the
   whole list and returns a confident `{matched:false}` that reads like "no such row." Filter by
   `name` (plus a state or `value_contains`); add `role` only once a snapshot shows them merged.
-- **Let glass run the loops you'd hand-roll.** `glass_scroll_to_element` replaces scroll-then-
-  snapshot polling; `return:"snapshot"` folds the re-read into the action that invalidated it;
-  `window_id` observes another window without retargeting; `glass_do` collapses a known sequence into
-  one call. The `glass_wait_for_*` family times out *softly* to `{matched:false}` — branch on that,
-  don't retry blindly.
+- **Let glass run the loops and sequences you'd hand-roll.** `glass_scroll_to_element` replaces
+  scroll-then-snapshot polling; `return:"snapshot"` folds the re-read into the action that invalidated
+  it; `window_id` observes another window without retargeting. After one fresh snapshot, put every
+  already-known action and confirmation in `glass_do`; use standalone calls only when a result must be
+  observed before choosing the next arguments. The `glass_wait_for_*` family times out *softly* to
+  `{matched:false}` — branch on that, don't retry blindly.
 - **Re-snapshot after anything that reflows layout.** a11y `#id`s and bounds go stale after a scroll,
   window switch, or keyboard/layout shift; clicking a cached id lands wrong. `return:"snapshot"` is
   the cheap way to stay current — and glass warns you (`element #N changed since the snapshot;
